@@ -2,6 +2,7 @@ import { MarkdownView, Notice, Plugin, PluginSettingTab, requestUrl, Setting, ty
 import { fetchModelNames, sendChat, type ChatMessage, type HttpRequest } from './ai-client';
 import CompanionView, { AI_COMPANION_VIEW_TYPE } from './companion-view';
 import { contextOrFallback, extractActiveContext, promptWithContext, type ReadingContext } from './context';
+import { cloneDefaultQuickPrompts, DEFAULT_QUICK_PROMPTS, type QuickPrompt } from './prompts';
 import { activeProfile, DEFAULT_SETTINGS, normalizeSettings, type AiReadingCompanionSettings, type AiModelConfig } from './settings';
 
 export default class AiReadingCompanionPlugin extends Plugin {
@@ -23,6 +24,16 @@ export default class AiReadingCompanionPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+
+  quickPrompts(): QuickPrompt[] {
+    return this.settings.quickPrompts.filter(prompt => prompt.enabled && prompt.label.trim() && prompt.prompt.trim());
+  }
+
+  refreshCompanionPrompts() {
+    for (const leaf of this.app.workspace.getLeavesOfType(AI_COMPANION_VIEW_TYPE)) {
+      if (leaf.view instanceof CompanionView) leaf.view.refreshQuickPrompts();
+    }
   }
 
   currentContext() {
@@ -103,7 +114,7 @@ class AiReadingCompanionSettingTab extends PluginSettingTab {
     const header = new Setting(containerEl).setName('AI 伴读');
     header.settingEl.addClass('arc-settings-header');
     const nav = header.settingEl.createDiv({ cls: 'arc-settings-tabs', attr: { role: 'tablist' } });
-    for (const section of ['模型', '伴读', '关于']) {
+    for (const section of ['模型', '伴读', '提示词', '关于']) {
       const button = nav.createEl('button', {
         text: section,
         attr: { role: 'tab', 'aria-selected': String(section === this.section), type: 'button' },
@@ -112,6 +123,7 @@ class AiReadingCompanionSettingTab extends PluginSettingTab {
     }
     if (this.section === '模型') this.renderModelSettings(containerEl);
     if (this.section === '伴读') this.renderCompanionSettings(containerEl);
+    if (this.section === '提示词') this.renderPromptSettings(containerEl);
     if (this.section === '关于') this.renderAbout(containerEl);
   }
 
@@ -202,6 +214,130 @@ class AiReadingCompanionSettingTab extends PluginSettingTab {
         this.plugin.settings = normalizeSettings(this.plugin.settings);
         await this.plugin.saveSettings();
       });
+    });
+  }
+
+  private async savePrompts(prompts: QuickPrompt[]) {
+    this.plugin.settings.quickPrompts = prompts;
+    this.plugin.settings = normalizeSettings(this.plugin.settings);
+    await this.plugin.saveSettings();
+    this.plugin.refreshCompanionPrompts();
+  }
+
+  private defaultPrompt(id: string): QuickPrompt | undefined {
+    return DEFAULT_QUICK_PROMPTS.find(prompt => prompt.id === id);
+  }
+
+  private renderPromptSettings(containerEl: HTMLElement) {
+    new Setting(containerEl)
+      .setName('Quick prompts')
+      .setDesc('这些按钮会显示在 AI 伴读输入框上方。可以编辑、隐藏、删除，也可以恢复默认。')
+      .addButton(button => button.setButtonText('新增提示词').onClick(async () => {
+        await this.savePrompts([...this.plugin.settings.quickPrompts, {
+          id: `custom-${Date.now()}`,
+          label: '新的提示词',
+          icon: 'sparkles',
+          prompt: '请基于当前内容完成这个阅读任务。',
+          enabled: true,
+        }]);
+        this.display();
+      }))
+      .addButton(button => button.setButtonText('恢复全部默认').onClick(async () => {
+        await this.savePrompts(cloneDefaultQuickPrompts());
+        this.display();
+    }));
+
+    this.plugin.settings.quickPrompts.forEach((prompt, index) => {
+      const defaultPrompt = this.defaultPrompt(prompt.id);
+      const card = containerEl.createDiv('arc-prompt-card');
+      const head = card.createDiv('arc-prompt-card-head');
+      const title = head.createDiv('arc-prompt-title');
+      title.createEl('strong', { text: `${index + 1}. ${prompt.label || '未命名提示词'}` });
+      title.createSpan({ text: prompt.enabled ? '显示在伴读面板' : '已隐藏' });
+      const actions = head.createDiv('arc-prompt-actions');
+      const enabledLabel = actions.createEl('label', { cls: 'arc-prompt-toggle' });
+      const enabled = enabledLabel.createEl('input', { type: 'checkbox' });
+      enabled.checked = prompt.enabled;
+      enabled.onchange = () => {
+        const next = [...this.plugin.settings.quickPrompts];
+        next[index] = { ...prompt, enabled: enabled.checked };
+        void this.savePrompts(next).then(() => this.display());
+      };
+      enabledLabel.createSpan({ text: '启用' });
+      const up = actions.createEl('button', { text: '上移', attr: { type: 'button' } });
+      up.disabled = index === 0;
+      up.onclick = () => {
+        void (async () => {
+          const next = [...this.plugin.settings.quickPrompts];
+          [next[index - 1], next[index]] = [next[index], next[index - 1]];
+          await this.savePrompts(next);
+          this.display();
+        })();
+      };
+      const down = actions.createEl('button', { text: '下移', attr: { type: 'button' } });
+      down.disabled = index === this.plugin.settings.quickPrompts.length - 1;
+      down.onclick = () => {
+        void (async () => {
+          const next = [...this.plugin.settings.quickPrompts];
+          [next[index], next[index + 1]] = [next[index + 1], next[index]];
+          await this.savePrompts(next);
+          this.display();
+        })();
+      };
+      const reset = actions.createEl('button', { text: '恢复默认', attr: { type: 'button' } });
+      reset.disabled = !defaultPrompt;
+      reset.onclick = () => {
+        void (async () => {
+          if (!defaultPrompt) return;
+          const next = [...this.plugin.settings.quickPrompts];
+          next[index] = { ...defaultPrompt };
+          await this.savePrompts(next);
+          this.display();
+        })();
+      };
+      const remove = actions.createEl('button', { text: '删除', attr: { type: 'button' } });
+      remove.onclick = () => {
+        void (async () => {
+          const next = this.plugin.settings.quickPrompts.filter((_, i) => i !== index);
+          await this.savePrompts(next);
+          this.display();
+        })();
+      };
+
+      const fields = card.createDiv('arc-prompt-fields');
+      const nameLabel = fields.createEl('label');
+      nameLabel.createSpan({ text: '按钮名称' });
+      const nameInput = nameLabel.createEl('input', { type: 'text' });
+      nameInput.value = prompt.label;
+      nameInput.onchange = () => {
+        void (async () => {
+          const next = [...this.plugin.settings.quickPrompts];
+          next[index] = { ...prompt, label: nameInput.value };
+          await this.savePrompts(next);
+          this.display();
+        })();
+      };
+      const iconLabel = fields.createEl('label');
+      iconLabel.createSpan({ text: '图标' });
+      const iconInput = iconLabel.createEl('input', { type: 'text' });
+      iconInput.placeholder = 'sparkles';
+      iconInput.value = prompt.icon;
+      iconInput.onchange = () => {
+        void (async () => {
+          const next = [...this.plugin.settings.quickPrompts];
+          next[index] = { ...prompt, icon: iconInput.value };
+          await this.savePrompts(next);
+        })();
+      };
+      const promptLabel = card.createEl('label', { cls: 'arc-prompt-text' });
+      promptLabel.createSpan({ text: '提示词' });
+      const textarea = promptLabel.createEl('textarea', { attr: { rows: '8', spellcheck: 'false' } });
+      textarea.value = prompt.prompt;
+      textarea.onchange = () => {
+        const next = [...this.plugin.settings.quickPrompts];
+        next[index] = { ...prompt, prompt: textarea.value };
+        void this.savePrompts(next);
+      };
     });
   }
 

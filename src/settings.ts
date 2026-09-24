@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { cloneDefaultQuickPrompts, type QuickPrompt } from './prompts';
 
 export const aiModelConfigSchema = z.object({
   id: z.string().min(1).catch('default'),
@@ -13,10 +14,19 @@ export const aiModelConfigSchema = z.object({
 
 export type AiModelConfig = z.infer<typeof aiModelConfigSchema>;
 
+const quickPromptSchema = z.object({
+  id: z.string().min(1).catch('custom'),
+  label: z.string().max(80).catch('提示词'),
+  icon: z.string().max(80).catch('sparkles'),
+  prompt: z.string().catch(''),
+  enabled: z.boolean().catch(true),
+});
+
 export interface AiReadingCompanionSettings {
   enabled: boolean;
   activeProfileId: string;
   profiles: AiModelConfig[];
+  quickPrompts: QuickPrompt[];
   contextMaxChars: number;
 }
 
@@ -35,6 +45,7 @@ export const DEFAULT_SETTINGS: AiReadingCompanionSettings = {
   enabled: false,
   activeProfileId: 'default',
   profiles: [defaultProfile],
+  quickPrompts: cloneDefaultQuickPrompts(),
   contextMaxChars: 12000,
 };
 
@@ -42,6 +53,7 @@ const settingsSchema = z.object({
   enabled: z.boolean().catch(false),
   activeProfileId: z.string().catch('default'),
   profiles: z.array(aiModelConfigSchema).catch([defaultProfile]),
+  quickPrompts: z.array(quickPromptSchema).optional(),
   contextMaxChars: z.number().int().catch(12000),
 });
 
@@ -64,9 +76,21 @@ function normalizeProfile(profile: AiModelConfig, index: number): AiModelConfig 
   };
 }
 
+function normalizeQuickPrompt(prompt: z.infer<typeof quickPromptSchema>, index: number): QuickPrompt {
+  const id = prompt.id.trim() || `custom-${index + 1}`;
+  return {
+    id,
+    label: prompt.label.trim() || '提示词',
+    icon: prompt.icon.trim() || 'sparkles',
+    prompt: prompt.prompt.trim(),
+    enabled: prompt.enabled,
+  };
+}
+
 export function normalizeSettings(data: unknown): AiReadingCompanionSettings {
   const parsed = settingsSchema.parse(data ?? DEFAULT_SETTINGS);
   const profiles = (parsed.profiles.length ? parsed.profiles : [defaultProfile]).map(normalizeProfile);
+  const quickPrompts = (parsed.quickPrompts ?? cloneDefaultQuickPrompts()).map(normalizeQuickPrompt);
   const activeProfileId = profiles.some(profile => profile.id === parsed.activeProfileId)
     ? parsed.activeProfileId
     : profiles[0].id;
@@ -74,6 +98,7 @@ export function normalizeSettings(data: unknown): AiReadingCompanionSettings {
     enabled: parsed.enabled,
     activeProfileId,
     profiles,
+    quickPrompts,
     contextMaxChars: clamp(parsed.contextMaxChars, 1000, 60000),
   };
 }
