@@ -28,15 +28,13 @@ jobs:
       - name: Run checks
         run: npm run check
 
-      - name: Prepare release archive
-        run: |
-          mkdir -p dist
-          cp main.js manifest.json styles.css README.md LICENSE dist/
-          cd dist
-          zip -r "../ai-reading-companion-${GITHUB_REF_NAME}.zip" .
-
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: ai-reading-companion-${{ github.ref_name }}.zip
+          files: |
+            main.js
+            manifest.json
+            styles.css
+            README.md
+            LICENSE
           generate_release_notes: true
