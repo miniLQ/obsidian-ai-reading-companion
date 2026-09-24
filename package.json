@@ -1,0 +1,25 @@
+{
+  "name": "obsidian-ai-reading-companion",
+  "version": "0.1.0",
+  "description": "AI reading companion for Obsidian notes.",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "node esbuild.config.mjs --watch",
+    "build": "tsc --noEmit && node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run test && npm run build"
+  },
+  "dependencies": {
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "builtin-modules": "^5.0.0",
+    "esbuild": "^0.28.2",
+    "obsidian": "^1.13.1",
+    "typescript": "^5.4.5",
+    "vitest": "^5.0.0"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "ai-reading-companion",
+  "name": "AI Reading Companion",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "An AI side panel for reading, summarizing, and writing back notes in Obsidian.",
+  "author": "Lindoo",
+  "isDesktopOnly": false
+}
