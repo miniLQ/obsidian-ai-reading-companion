@@ -116,8 +116,6 @@ export default class CompanionView extends ItemView {
         copy.onclick = () => {
           void navigator.clipboard.writeText(message.content).then(() => new Notice('已复制 AI 回答。'));
         };
-        const insert = tools.createEl('button', { text: '插入当前笔记', attr: { type: 'button' } });
-        insert.onclick = () => { void this.plugin.insertIntoCurrentNote(message.content); };
       } else {
         const normalized = message.content.replace(/\n/g, '  \n');
         void MarkdownRenderer.render(this.app, normalized, body, '', this)

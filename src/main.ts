@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, PluginSettingTab, requestUrl, Setting, type App } from 'obsidian';
+import { Notice, Plugin, PluginSettingTab, requestUrl, Setting, type App } from 'obsidian';
 import { fetchModelNames, sendChat, type ChatMessage, type HttpRequest } from './ai-client';
 import CompanionView, { AI_COMPANION_VIEW_TYPE } from './companion-view';
 import { contextOrFallback, extractActiveContext, promptWithContext, type ReadingContext } from './context';
@@ -78,13 +78,6 @@ export default class AiReadingCompanionPlugin extends Plugin {
       { role: 'system', content: '你只需要用中文简短回答连接状态。' },
       { role: 'user', content: '请回复“连接成功”。' },
     ], request => this.request(request));
-  }
-
-  async insertIntoCurrentNote(content: string) {
-    const markdown = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!markdown) throw new Error('请先打开一个 Markdown 笔记。');
-    markdown.editor.replaceSelection(`\n\n${content.trim()}\n`);
-    new Notice('已插入当前笔记。');
   }
 
   private async request(request: HttpRequest) {
@@ -344,5 +337,15 @@ class AiReadingCompanionSettingTab extends PluginSettingTab {
   private renderAbout(containerEl: HTMLElement) {
     new Setting(containerEl).setName('适用范围').setDesc('AI 伴读默认读取当前 Markdown 笔记或选中文本；当活动视图是 Qiaomu AI RSS 阅读器时，会读取当前文章正文。');
     new Setting(containerEl).setName('隐私提示').setDesc('只有点击发送或快捷伴读按钮时，当前上下文才会发送到你配置的模型服务。API Key 存储在本地插件数据中。');
+    new Setting(containerEl).setName('作者').setDesc('Lindoo');
+    this.renderAboutLink(containerEl, 'Git 项目地址', '打开仓库', 'https://github.com/miniLQ/obsidian-ai-reading-companion');
+    this.renderAboutLink(containerEl, '提交 Issue', '反馈问题或建议', 'https://github.com/miniLQ/obsidian-ai-reading-companion/issues');
+    this.renderAboutLink(containerEl, '作者主页', 'https://www.iliuqi.com', 'https://www.iliuqi.com');
+  }
+
+  private renderAboutLink(containerEl: HTMLElement, name: string, label: string, href: string) {
+    new Setting(containerEl).setName(name).addButton(button => button
+      .setButtonText(label)
+      .onClick(() => window.open(href, '_blank', 'noopener,noreferrer')));
   }
 }
