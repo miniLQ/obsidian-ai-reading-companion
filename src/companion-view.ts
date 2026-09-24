@@ -1,5 +1,6 @@
 import { ItemView, MarkdownRenderer, Notice, setIcon, type WorkspaceLeaf } from 'obsidian';
 import type AiReadingCompanionPlugin from './main';
+import { dragViewport, fitViewport, zoomViewport, type ViewportState } from './viewport';
 
 export const AI_COMPANION_VIEW_TYPE = 'ai-reading-companion-view';
 
@@ -108,7 +109,8 @@ export default class CompanionView extends ItemView {
       item.createDiv('arc-role').setText(message.role === 'user' ? '你' : 'AI');
       const body = item.createDiv('arc-message-body');
       if (message.role === 'assistant') {
-        void MarkdownRenderer.render(this.app, message.content, body, '', this);
+        void MarkdownRenderer.render(this.app, message.content, body, '', this)
+          .then(() => this.scheduleMindMapEnhancement(body));
         const tools = item.createDiv('arc-message-tools');
         const copy = tools.createEl('button', { text: '复制', attr: { type: 'button' } });
         copy.onclick = () => {
@@ -118,10 +120,102 @@ export default class CompanionView extends ItemView {
         insert.onclick = () => { void this.plugin.insertIntoCurrentNote(message.content); };
       } else {
         const normalized = message.content.replace(/\n/g, '  \n');
-        void MarkdownRenderer.render(this.app, normalized, body, '', this);
+        void MarkdownRenderer.render(this.app, normalized, body, '', this)
+          .then(() => this.scheduleMindMapEnhancement(body));
       }
     }
     this.transcript.scrollTop = this.transcript.scrollHeight;
+  }
+
+  private scheduleMindMapEnhancement(root: HTMLElement) {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => this.enhanceMindMaps(root));
+    });
+  }
+
+  private enhanceMindMaps(root: HTMLElement) {
+    for (const mermaid of Array.from(root.querySelectorAll<HTMLElement>('.mermaid'))) {
+      if (mermaid.closest('.arc-mindmap-viewer')) continue;
+      const svg = mermaid.querySelector<SVGSVGElement>('svg');
+      if (!svg) continue;
+      this.wrapMindMap(mermaid, svg);
+    }
+  }
+
+  private wrapMindMap(mermaid: HTMLElement, svg: SVGSVGElement) {
+    const viewer = mermaid.createDiv('arc-mindmap-viewer');
+    const toolbar = viewer.createDiv('arc-mindmap-toolbar');
+    const hint = toolbar.createSpan({ text: '滚轮缩放 · 拖拽移动' });
+    hint.addClass('arc-mindmap-hint');
+    const zoomOut = toolbar.createEl('button', { text: '−', attr: { type: 'button', title: '缩小' } });
+    const reset = toolbar.createEl('button', { text: '复位', attr: { type: 'button', title: '复位' } });
+    const zoomIn = toolbar.createEl('button', { text: '+', attr: { type: 'button', title: '放大' } });
+    const canvas = viewer.createDiv('arc-mindmap-canvas');
+    const stage = canvas.createDiv('arc-mindmap-stage');
+    stage.appendChild(svg);
+    mermaid.appendChild(viewer);
+
+    const bounds = this.mindMapBounds(svg);
+    svg.setAttribute('width', String(bounds.width));
+    svg.setAttribute('height', String(bounds.height));
+    svg.style.width = `${bounds.width}px`;
+    svg.style.height = `${bounds.height}px`;
+    svg.style.maxWidth = 'none';
+    stage.style.width = `${bounds.width}px`;
+    stage.style.height = `${bounds.height}px`;
+    svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+
+    let state = this.initialMindMapState(bounds, canvas);
+    const apply = () => {
+      stage.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+    };
+    apply();
+
+    const zoomAt = (factor: number, x = canvas.clientWidth / 2, y = canvas.clientHeight / 2) => {
+      state = zoomViewport(state, factor, { x, y });
+      apply();
+    };
+    zoomOut.onclick = () => zoomAt(0.82);
+    zoomIn.onclick = () => zoomAt(1.18);
+    reset.onclick = () => { state = this.initialMindMapState(bounds, canvas); apply(); };
+    canvas.ondblclick = () => { state = this.initialMindMapState(bounds, canvas); apply(); };
+    canvas.onwheel = event => {
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      zoomAt(event.deltaY < 0 ? 1.12 : 0.88, event.clientX - rect.left, event.clientY - rect.top);
+    };
+
+    let drag: { id: number; x: number; y: number } | null = null;
+    canvas.onpointerdown = event => {
+      drag = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      canvas.setPointerCapture(event.pointerId);
+      canvas.addClass('is-dragging');
+    };
+    canvas.onpointermove = event => {
+      if (!drag || drag.id !== event.pointerId) return;
+      state = dragViewport(state, event.clientX - drag.x, event.clientY - drag.y);
+      drag = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      apply();
+    };
+    const stopDrag = (event: PointerEvent) => {
+      if (!drag || drag.id !== event.pointerId) return;
+      drag = null;
+      canvas.releasePointerCapture(event.pointerId);
+      canvas.removeClass('is-dragging');
+    };
+    canvas.onpointerup = stopDrag;
+    canvas.onpointercancel = stopDrag;
+  }
+
+  private mindMapBounds(svg: SVGSVGElement): { width: number; height: number } {
+    const box = svg.viewBox.baseVal;
+    if (box?.width && box?.height) return { width: box.width, height: box.height };
+    const rect = svg.getBoundingClientRect();
+    return { width: rect.width || 900, height: rect.height || 520 };
+  }
+
+  private initialMindMapState(bounds: { width: number; height: number }, canvas: HTMLElement): ViewportState {
+    return fitViewport(bounds, { width: canvas.clientWidth || 720, height: canvas.clientHeight || 420 });
   }
 
   private async submit(raw: string) {
