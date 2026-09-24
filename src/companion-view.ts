@@ -46,18 +46,11 @@ export default class CompanionView extends ItemView {
     this.contextBadge = copy.createDiv('arc-context');
     this.refreshContextBadge();
 
-    const tools = this.contentEl.createDiv('arc-quick');
-    for (const item of quickPrompts) {
-      const button = tools.createEl('button', { attr: { type: 'button', title: item.label } });
-      setIcon(button, item.icon);
-      button.createSpan({ text: item.label });
-      button.onclick = () => { void this.submit(item.prompt); };
-    }
-
     this.transcript = this.contentEl.createDiv('arc-transcript');
     this.renderTranscript();
 
     const composer = this.contentEl.createDiv('arc-composer');
+    this.renderQuickPrompts(composer);
     this.input = composer.createEl('textarea', { attr: { rows: '3', placeholder: '围绕当前笔记或文章提问...' } });
     this.input.onkeydown = event => {
       if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
@@ -70,6 +63,16 @@ export default class CompanionView extends ItemView {
     clear.onclick = () => { this.messages = []; this.renderTranscript(); };
     const send = actions.createEl('button', { text: '发送', cls: 'mod-cta', attr: { type: 'button' } });
     send.onclick = () => { void this.submit(this.input.value); };
+  }
+
+  private renderQuickPrompts(container: HTMLElement) {
+    const tools = container.createDiv('arc-quick');
+    for (const item of quickPrompts) {
+      const button = tools.createEl('button', { attr: { type: 'button', title: item.label } });
+      setIcon(button, item.icon);
+      button.createSpan({ text: item.label });
+      button.onclick = () => { void this.submit(item.prompt); };
+    }
   }
 
   private refreshContextBadge() {
